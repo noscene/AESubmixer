@@ -8,14 +8,18 @@
 
 #import "TheAmazingAudioEngine.h"
 
+
+#define MAX_INPUT_BUS_COUNT 4
+
+
 @interface AESubmixer : NSObject <AEAudioReceiver, AEAudioPlayable > {
 
 
-    void *  bufferL;
-    void *  bufferR;
-    int     buffersize;
-    float   levels[4];
-    NSInteger     level_idx;    
+    void *      bufferL;
+    void *      bufferR;
+    int         buffersize;
+    float       levels[MAX_INPUT_BUS_COUNT];
+    NSInteger   level_idx;
 }
 
 
