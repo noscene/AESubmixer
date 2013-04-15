@@ -9,7 +9,6 @@
 #import "AESubmixer.h"
 
 
-// TODO: free buffers if frame count is changed!!!!
 
 @implementation AESubmixer
 
@@ -18,10 +17,13 @@
     self = [super init];
     if (self) {
         buffersize = 0;
-        levels[0] = 0.0f;
-        levels[1] = 0.0f;
-        levels[2] = 0.0f;
-        levels[3] = 0.0f;
+        // Set default to non send
+        for(int i=0; i< MAX_INPUT_BUS_COUNT ; i++){
+            levels[i] = 0.0f;
+        }
+        // alloc any buffer if size chained we re alloc
+        bufferL = malloc(512*(sizeof(float)));
+        bufferR = malloc(512*(sizeof(float)));
         
     }
     return self;
@@ -34,21 +36,20 @@ static OSStatus renderCallback(AESubmixer *THIS,
                                const AudioTimeStamp *time,
                                UInt32 frames,
                                AudioBufferList *audio) {
-    // TODO: Generate audio in 'audio'
-    // printf("> %f \n",time->mSampleTime);
-    // float db0=0.0;
 
     if(frames==THIS->buffersize){
-        // Kopie Summe aus 4 in den Audiobuffer
+        // Copy current Sum to Audiobuffer
         memcpy(audio->mBuffers[0].mData, THIS->bufferL, frames * sizeof(float));
         memcpy(audio->mBuffers[1].mData, THIS->bufferR, frames * sizeof(float));
 
-        // Puffer wieder zum aufaddieren auf 0 setzen
+        // Clear for refill
         vDSP_vclr(THIS->bufferL, 1, frames);
         vDSP_vclr(THIS->bufferR, 1, frames);
         THIS->level_idx=0;
     }else{
-        // alloc buffer + clear
+        // if System Buffersize will changed... we re-alloc
+        free(THIS->bufferL);
+        free(THIS->bufferR);
         THIS->bufferL = malloc(frames*(sizeof(float)));
         THIS->bufferR = malloc(frames*(sizeof(float)));
         vDSP_vclr(THIS->bufferL, 1, frames);
@@ -73,19 +74,15 @@ static void receiverCallback(id                        receiver,
                              const AudioTimeStamp     *time,
                              UInt32                    frames,
                              AudioBufferList          *audio) {
-    
-    /*
-    // Leider nur der RenderCallback
-    mo_ausynth * xx = source;
-    NSLog(@"xx %ld",xx);
-    */
+
+    // cant use *source to identify the src channel :-(
     // Sum Audio from Channels
     AESubmixer *THIS = (AESubmixer*)receiver;
-    if(THIS->buffersize==frames && THIS->level_idx<4 ){
-        // printf("< %f %ld \n",time->mSampleTime,frames);
+    if(THIS->buffersize==frames && THIS->level_idx<MAX_INPUT_BUS_COUNT ) {
+
 
         if(THIS->levels[THIS->level_idx] > 0.0f ) {
-            // Multiplizieren und aufaddieren
+            // dest[n] =  dest[n] + (in[n] * level )
             vDSP_vsma(audio->mBuffers[0].mData,1,
                    &THIS->levels[THIS->level_idx],
                    THIS->bufferL , 1,
@@ -97,26 +94,29 @@ static void receiverCallback(id                        receiver,
                   THIS->bufferR , 1,
                   frames);
         }
+    }else{
+        NSLog(@"AESubmixer:receiverCallback   no Receiver or Buffersize changed ? ");
     }
     THIS->level_idx++;
 }
 
-
+// its a pointer !
 -(float*) levelForIndex: (NSInteger) idx {
     return &levels[idx];
 
 }
 
 -(void) setLevel: (float) level forIndex:(NSInteger) idx{
-    if(idx>=0 && idx<4){
-        printf("AESubmixer setLevel: %f forIndex:%d",level,idx);
+    if(idx>=0 && idx<MAX_INPUT_BUS_COUNT) {
+        // printf("AESubmixer setLevel: %f forIndex:%d",level,idx);
         levels[idx]=level;
+    }else{
+        NSLog(@"AESubmixer:setLevel  invalid Index! ");
     }
 }
 
 
 -(AEAudioControllerAudioCallback)receiverCallback {
-
     return receiverCallback;
 }
 
@@ -124,16 +124,12 @@ static void receiverCallback(id                        receiver,
 
 - (AudioStreamBasicDescription) audioDescription {
     return [AEAudioController nonInterleavedFloatStereoAudioDescription];
-
 }
 
 
 -(void) dealloc{
-
     free(bufferL);
     free(bufferR);
-
-
     [super dealloc];
 }
 
